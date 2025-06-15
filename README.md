@@ -1,1 +1,2 @@
-# Nazdeeki-be
+# NTSFoods-be
+Backend for Nasdeeki food ordering app
