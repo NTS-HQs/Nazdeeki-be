@@ -2,26 +2,31 @@
   "name": "ntsfoods-be",
   "version": "1.0.0",
   "description": "Backend for Nasdeeki food ordering app",
-  "main": "src/index.ts",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node dist/index.js",
-    "dev": "nodemon --watch src --exec ts-node src/index.ts",
-    "build": "tsc"
+    "start": "node src/index.js",
+    "dev": "nodemon --watch src src/index.js",
+    "build": "echo 'No build step needed for pure JS'"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
     "pg": "^8.16.0",
     "reflect-metadata": "^0.2.2",
-    "typeorm": "^0.3.24"
+    "typeorm": "^0.3.24",
+    "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.2",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "@types/cors": "^2.8.13",
+    "@types/node": "^20.11.7"
   }
 }
