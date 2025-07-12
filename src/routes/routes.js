@@ -109,14 +109,86 @@ function createCrudRouter(tableName, primaryKey) {
     const { id } = req.params;
     try {
       const AppDataSource = getDataSource();
-      await AppDataSource.query(`DELETE FROM ${tableName} WHERE ${primaryKey} = $1`, [id]);
+      
+      // Special handling for sellers table - handle foreign key relationships
+      if (tableName === 'sellers') {
+        await handleSellerDeletion(AppDataSource, id);
+      } else {
+        await AppDataSource.query(`DELETE FROM ${tableName} WHERE ${primaryKey} = $1`, [id]);
+      }
+      
       res.status(204).send();
     } catch (err) {
+      console.error(`Delete error for ${tableName}:`, err);
       res.status(500).json({ error: err.message });
     }
   });
 
   return router;
+}
+
+// Helper function to handle seller deletion with foreign key cleanup
+async function handleSellerDeletion(AppDataSource, sellerId) {
+  // Start transaction
+  const queryRunner = AppDataSource.createQueryRunner();
+  await queryRunner.connect();
+  await queryRunner.startTransaction();
+  
+  try {
+    console.log(`🗑️ Starting seller deletion process for: ${sellerId}`);
+    
+    // 1. Delete from auth_sessions (CASCADE should handle this, but being explicit)
+    await queryRunner.query('DELETE FROM auth_sessions WHERE seller_id = $1', [sellerId]);
+    console.log(`✅ Deleted auth_sessions for seller: ${sellerId}`);
+    
+    // 2. Delete from auth_logs (keep logs for audit, but can be deleted if needed)
+    // await queryRunner.query('DELETE FROM auth_logs WHERE seller_id = $1', [sellerId]);
+    
+    // 3. Delete related records by rest_id (assuming rest_id = seller_id)
+    const relatedTables = [
+      { table: 'collection', key: 'rest_id' },
+      { table: 'likes', key: 'rest_id' },
+      { table: 'menu', key: 'rest_id' },
+      { table: 'order_list', key: 'rest_id' },
+      { table: 'orders', key: 'rest_id' },
+      { table: 'rating', key: 'rest_id' }
+    ];
+    
+    for (const { table, key } of relatedTables) {
+      const result = await queryRunner.query(`DELETE FROM ${table} WHERE ${key} = $1`, [sellerId]);
+      console.log(`✅ Deleted ${result.affectedRows || 0} records from ${table} for seller: ${sellerId}`);
+    }
+    
+    // 4. Get the address_id before deleting seller
+    const sellerResult = await queryRunner.query('SELECT address_id FROM sellers WHERE seller_id = $1', [sellerId]);
+    const addressId = sellerResult.length > 0 ? sellerResult[0].address_id : null;
+    
+    // 5. Delete the seller
+    await queryRunner.query('DELETE FROM sellers WHERE seller_id = $1', [sellerId]);
+    console.log(`✅ Deleted seller: ${sellerId}`);
+    
+    // 6. Delete associated address if it exists and is only used by this seller
+    if (addressId) {
+      // Check if any other sellers use this address
+      const otherSellers = await queryRunner.query('SELECT COUNT(*) as count FROM sellers WHERE address_id = $1', [addressId]);
+      if (parseInt(otherSellers[0].count) === 0) {
+        await queryRunner.query('DELETE FROM addresses WHERE address_id = $1', [addressId]);
+        console.log(`✅ Deleted associated address: ${addressId}`);
+      }
+    }
+    
+    // Commit transaction
+    await queryRunner.commitTransaction();
+    console.log(`🎉 Successfully deleted seller and all related data: ${sellerId}`);
+    
+  } catch (error) {
+    // Rollback transaction
+    await queryRunner.rollbackTransaction();
+    console.error(`🚨 Error during seller deletion, transaction rolled back:`, error);
+    throw error;
+  } finally {
+    await queryRunner.release();
+  }
 }
 
 // -----------------------------------------------------------------------------
