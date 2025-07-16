@@ -690,6 +690,18 @@ router.put('/update-profile', async (req, res) => {
       return res.status(401).json({ error: 'Invalid token type' });
     }
 
+    // Get current seller data FIRST to get address_id
+    const currentSellerResult = await AppDataSource.query(
+      'SELECT * FROM sellers WHERE seller_id = $1',
+      [payload.userId]
+    );
+
+    if (currentSellerResult.length === 0) {
+      return res.status(404).json({ error: 'Seller not found' });
+    }
+
+    const currentSeller = currentSellerResult[0];
+
     const {
       ownerName,
       restaurantName,
@@ -732,6 +744,178 @@ router.put('/update-profile', async (req, res) => {
       operationalFields: { openingTime, closingTime, serviceTypes },
       legacyFields: { address, operatingHours, serviceType }
     });
+
+    // Handle address FIRST using current seller's address_id
+    let addressData = '';
+    let addressFields = {};
+    
+    // Handle new detailed address fields
+    if ((addressType !== undefined || country !== undefined || state !== undefined || 
+         city !== undefined || pincode !== undefined || houseAddress !== undefined || 
+         colonyName !== undefined || landmark !== undefined || restaurantAddress !== undefined ||
+         latitude !== undefined || longitude !== undefined) && currentSeller.address_id) {
+      try {
+        console.log(`🏠 Updating address for address_id: ${currentSeller.address_id}`);
+        
+        // Check if address record exists, if not create it
+        const existingAddress = await AppDataSource.query(
+          'SELECT * FROM addresses WHERE address_id = $1',
+          [currentSeller.address_id]
+        );
+
+        // Build address update fields
+        const addressUpdateFields = [];
+        const addressValues = [];
+        let addressParamCount = 1;
+        
+        if (country !== undefined) {
+          addressUpdateFields.push(`country = $${addressParamCount++}`);
+          addressValues.push(country);
+        }
+        if (state !== undefined) {
+          addressUpdateFields.push(`state = $${addressParamCount++}`);
+          addressValues.push(state);
+        }
+        if (city !== undefined) {
+          addressUpdateFields.push(`city = $${addressParamCount++}`);
+          addressValues.push(city);
+        }
+        if (pincode !== undefined) {
+          addressUpdateFields.push(`pincode = $${addressParamCount++}`);
+          addressValues.push(pincode ? pincode.trim() : null);
+        }
+        if (houseAddress !== undefined) {
+          addressUpdateFields.push(`house_ad = $${addressParamCount++}`);
+          addressValues.push(houseAddress);
+        }
+        if (colonyName !== undefined) {
+          addressUpdateFields.push(`colony_name = $${addressParamCount++}`);
+          addressValues.push(colonyName);
+        }
+        if (landmark !== undefined) {
+          addressUpdateFields.push(`landmark = $${addressParamCount++}`);
+          addressValues.push(landmark);
+        }
+        if (restaurantAddress !== undefined) {
+          addressUpdateFields.push(`rest_ad = $${addressParamCount++}`);
+          addressValues.push(restaurantAddress);
+        }
+        if (latitude !== undefined) {
+          addressUpdateFields.push(`latitude = $${addressParamCount++}`);
+          addressValues.push(parseFloat(latitude) || null);
+        }
+        if (longitude !== undefined) {
+          addressUpdateFields.push(`longitude = $${addressParamCount++}`);
+          addressValues.push(parseFloat(longitude) || null);
+        }
+
+        if (existingAddress.length === 0) {
+          // Create new address record
+          const insertFields = ['address_id', 'rest_id'];
+          const insertValues = [currentSeller.address_id, currentSeller.seller_id];
+          const insertPlaceholders = ['$1', '$2'];
+          let insertParamCount = 3;
+          
+          // Add all provided address fields to insert
+          if (country !== undefined) {
+            insertFields.push('country');
+            insertValues.push(country);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (state !== undefined) {
+            insertFields.push('state');
+            insertValues.push(state);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (city !== undefined) {
+            insertFields.push('city');
+            insertValues.push(city);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (pincode !== undefined) {
+            insertFields.push('pincode');
+            insertValues.push(parseInt(pincode) || null);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (houseAddress !== undefined) {
+            insertFields.push('house_ad');
+            insertValues.push(houseAddress);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (colonyName !== undefined) {
+            insertFields.push('colony_name');
+            insertValues.push(colonyName);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (landmark !== undefined) {
+            insertFields.push('landmark');
+            insertValues.push(landmark);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (restaurantAddress !== undefined) {
+            insertFields.push('rest_ad');
+            insertValues.push(restaurantAddress);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (latitude !== undefined) {
+            insertFields.push('latitude');
+            insertValues.push(parseFloat(latitude) || null);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          if (longitude !== undefined) {
+            insertFields.push('longitude');
+            insertValues.push(parseFloat(longitude) || null);
+            insertPlaceholders.push(`$${insertParamCount++}`);
+          }
+          
+          await AppDataSource.query(
+            `INSERT INTO addresses (${insertFields.join(', ')}) VALUES (${insertPlaceholders.join(', ')})`,
+            insertValues
+          );
+          console.log('🏠 Inserted new address with fields:', insertFields);
+          console.log('🏠 With values:', insertValues);
+        } else if (addressUpdateFields.length > 0) {
+          // Update existing address record
+          addressValues.push(currentSeller.address_id);
+          const addressSql = `UPDATE addresses SET ${addressUpdateFields.join(', ')} WHERE address_id = $${addressParamCount}`;
+          console.log('🏠 Executing address update SQL:', addressSql);
+          console.log('🏠 With values:', addressValues);
+          await AppDataSource.query(
+            addressSql,
+            addressValues
+          );
+        }
+        
+        // Get updated address data
+        const updatedAddress = await AppDataSource.query(
+          'SELECT * FROM addresses WHERE address_id = $1',
+          [currentSeller.address_id]
+        );
+        
+        if (updatedAddress.length > 0) {
+          const addr = updatedAddress[0];
+          addressFields = {
+            addressType: addr.address_type,
+            country: addr.country,
+            state: addr.state,
+            city: addr.city,
+            pincode: addr.pincode?.toString(),
+            houseAddress: addr.house_ad,
+            colonyName: addr.colony_name,
+            landmark: addr.landmark,
+            restaurantAddress: addr.rest_ad,
+            latitude: addr.latitude,
+            longitude: addr.longitude
+          };
+          addressData = addr.rest_ad || '';
+        }
+        
+        console.log(`✅ Address updated for address_id: ${currentSeller.address_id}`);
+      } catch (addressError) {
+        console.error('🚨 Address update error:', addressError.message);
+        // Continue without failing the whole request
+      }
+    }
 
     // Build dynamic update query for sellers table
     const updateFields = [];
@@ -815,8 +999,8 @@ router.put('/update-profile', async (req, res) => {
     if (specialOffers !== undefined) {
       updateFields.push(`special_offers = $${paramCount++}`);
       values.push(specialOffers);
-    }
-
+        }
+        
     // Always update the updated_at timestamp
     updateFields.push(`updated_at = NOW()`);
     values.push(payload.userId);
@@ -835,219 +1019,7 @@ router.put('/update-profile', async (req, res) => {
       }
       updatedSeller = result[0];
     } else {
-      // Get current seller data
-      const result = await AppDataSource.query(
-        'SELECT * FROM sellers WHERE seller_id = $1',
-        [payload.userId]
-      );
-      if (result.length === 0) {
-        return res.status(404).json({ error: 'Seller not found' });
-      }
-      updatedSeller = result[0];
-    }
-
-    // Handle address separately in addresses table
-    let addressData = '';
-    let addressFields = {};
-    
-    // Handle new detailed address fields
-    if ((addressType !== undefined || country !== undefined || state !== undefined || 
-         city !== undefined || pincode !== undefined || houseAddress !== undefined || 
-         colonyName !== undefined || landmark !== undefined || restaurantAddress !== undefined ||
-         latitude !== undefined || longitude !== undefined) && updatedSeller.address_id) {
-      try {
-        // Check if address record exists, if not create it
-        const existingAddress = await AppDataSource.query(
-          'SELECT * FROM addresses WHERE address_id = $1',
-          [updatedSeller.address_id]
-        );
-
-        // Build address update fields
-        const addressUpdateFields = [];
-        const addressValues = [];
-        let addressParamCount = 1;
-        
-        if (addressType !== undefined) {
-          addressUpdateFields.push(`address_type = $${addressParamCount++}`);
-          addressValues.push(addressType);
-        }
-        if (country !== undefined) {
-          addressUpdateFields.push(`country = $${addressParamCount++}`);
-          addressValues.push(country);
-        }
-        if (state !== undefined) {
-          addressUpdateFields.push(`state = $${addressParamCount++}`);
-          addressValues.push(state);
-        }
-        if (city !== undefined) {
-          addressUpdateFields.push(`city = $${addressParamCount++}`);
-          addressValues.push(city);
-        }
-        if (pincode !== undefined) {
-          addressUpdateFields.push(`pincode = $${addressParamCount++}`);
-          addressValues.push(parseInt(pincode) || null);
-        }
-        if (houseAddress !== undefined) {
-          addressUpdateFields.push(`house_ad = $${addressParamCount++}`);
-          addressValues.push(houseAddress);
-        }
-        if (colonyName !== undefined) {
-          addressUpdateFields.push(`colony_name = $${addressParamCount++}`);
-          addressValues.push(colonyName);
-        }
-        if (landmark !== undefined) {
-          addressUpdateFields.push(`landmark = $${addressParamCount++}`);
-          addressValues.push(landmark);
-        }
-        if (restaurantAddress !== undefined) {
-          addressUpdateFields.push(`rest_ad = $${addressParamCount++}`);
-          addressValues.push(restaurantAddress);
-        }
-        if (latitude !== undefined) {
-          addressUpdateFields.push(`latitude = $${addressParamCount++}`);
-          addressValues.push(parseFloat(latitude) || null);
-        }
-        if (longitude !== undefined) {
-          addressUpdateFields.push(`longitude = $${addressParamCount++}`);
-          addressValues.push(parseFloat(longitude) || null);
-        }
-
-        if (existingAddress.length === 0) {
-          // Create new address record
-          const insertFields = ['address_id', 'rest_id'];
-          const insertValues = [updatedSeller.address_id, updatedSeller.seller_id];
-          const insertPlaceholders = ['$1', '$2'];
-          let insertParamCount = 3;
-          
-          // Add all provided address fields to insert
-          if (addressType !== undefined) {
-            insertFields.push('address_type');
-            insertValues.push(addressType);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (country !== undefined) {
-            insertFields.push('country');
-            insertValues.push(country);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (state !== undefined) {
-            insertFields.push('state');
-            insertValues.push(state);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (city !== undefined) {
-            insertFields.push('city');
-            insertValues.push(city);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (pincode !== undefined) {
-            insertFields.push('pincode');
-            insertValues.push(parseInt(pincode) || null);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (houseAddress !== undefined) {
-            insertFields.push('house_ad');
-            insertValues.push(houseAddress);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (colonyName !== undefined) {
-            insertFields.push('colony_name');
-            insertValues.push(colonyName);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (landmark !== undefined) {
-            insertFields.push('landmark');
-            insertValues.push(landmark);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (restaurantAddress !== undefined) {
-            insertFields.push('rest_ad');
-            insertValues.push(restaurantAddress);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (latitude !== undefined) {
-            insertFields.push('latitude');
-            insertValues.push(parseFloat(latitude) || null);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          if (longitude !== undefined) {
-            insertFields.push('longitude');
-            insertValues.push(parseFloat(longitude) || null);
-            insertPlaceholders.push(`$${insertParamCount++}`);
-          }
-          
-          await AppDataSource.query(
-            `INSERT INTO addresses (${insertFields.join(', ')}) VALUES (${insertPlaceholders.join(', ')})`,
-            insertValues
-          );
-          console.log('🏠 Inserted new address with fields:', insertFields);
-          console.log('🏠 With values:', insertValues);
-        } else if (addressUpdateFields.length > 0) {
-          // Update existing address record
-          addressValues.push(updatedSeller.address_id);
-          const addressSql = `UPDATE addresses SET ${addressUpdateFields.join(', ')} WHERE address_id = $${addressParamCount}`;
-          console.log('🏠 Executing address update SQL:', addressSql);
-          console.log('🏠 With values:', addressValues);
-          await AppDataSource.query(
-            addressSql,
-            addressValues
-          );
-        }
-        
-        // Get updated address data
-        const updatedAddress = await AppDataSource.query(
-          'SELECT * FROM addresses WHERE address_id = $1',
-          [updatedSeller.address_id]
-        );
-        
-        if (updatedAddress.length > 0) {
-          const addr = updatedAddress[0];
-          addressFields = {
-            addressType: addr.address_type,
-            country: addr.country,
-            state: addr.state,
-            city: addr.city,
-            pincode: addr.pincode?.toString(),
-            houseAddress: addr.house_ad,
-            colonyName: addr.colony_name,
-            landmark: addr.landmark,
-            restaurantAddress: addr.rest_ad,
-            latitude: addr.latitude,
-            longitude: addr.longitude
-          };
-          addressData = addr.rest_ad || '';
-        }
-        
-        console.log(`✅ Address updated for address_id: ${updatedSeller.address_id}`);
-      } catch (addressError) {
-        console.error('🚨 Address update error:', addressError.message);
-        // Continue without failing the whole request
-      }
-    } else if (address !== undefined && updatedSeller.address_id) {
-      // Legacy address handling
-      try {
-        const existingAddress = await AppDataSource.query(
-          'SELECT address_id FROM addresses WHERE address_id = $1',
-          [updatedSeller.address_id]
-        );
-
-        if (existingAddress.length === 0) {
-          await AppDataSource.query(
-            'INSERT INTO addresses (address_id, rest_id, address_type, rest_ad) VALUES ($1, $2, $3, $4)',
-            [updatedSeller.address_id, updatedSeller.seller_id, 'restaurant', address]
-          );
-        } else {
-          await AppDataSource.query(
-            'UPDATE addresses SET rest_ad = $1 WHERE address_id = $2',
-            [address, updatedSeller.address_id]
-          );
-        }
-        
-        addressData = address;
-        console.log(`✅ Legacy address updated for address_id: ${updatedSeller.address_id}`);
-      } catch (addressError) {
-        console.error('🚨 Legacy address update error:', addressError.message);
-      }
+      updatedSeller = currentSeller;
     }
 
     console.log(`✅ Profile updated for seller: ${payload.userId}`);
