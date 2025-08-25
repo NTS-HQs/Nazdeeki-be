@@ -218,21 +218,35 @@ testRouter.post('/:table', async (req, res) => {
     let keys = Object.keys(body);
     if (keys.length === 0) return res.status(400).json({ message: 'Body is empty' });
     
-    // Special handling for menu table - exclude item_id since it's auto-increment
-    if (table === 'menu') {
-      keys = keys.filter(key => key !== 'item_id');
-      const filteredBody = {};
-      keys.forEach(key => { filteredBody[key] = body[key]; });
-      var values = Object.values(filteredBody);
-    } else {
-      var values = Object.values(body);
+    // Get table schema for validation
+    const tableSchema = dbSchema.tables[table];
+    if (!tableSchema) {
+      return res.status(400).json({ message: `Table '${table}' not found in schema` });
     }
+    
+    // Filter out auto-increment primary keys
+    const primaryKeys = tableSchema.primaryKeys || [];
+    keys = keys.filter(key => {
+      // Special handling for menu table - exclude item_id since it's auto-increment
+      if (table === 'menu' && key === 'item_id') return false;
+      // Exclude other auto-increment primary keys
+      if (primaryKeys.includes(key) && tableSchema.columns.includes(key)) {
+        // Check if it's likely auto-increment (integer primary key)
+        return false;
+      }
+      return true;
+    });
+    
+    const filteredBody = {};
+    keys.forEach(key => { filteredBody[key] = body[key]; });
+    const values = Object.values(filteredBody);
     
     const placeholders = keys.map((_, i) => `$${i + 1}`).join(',');
     const sql = `INSERT INTO ${table} (${keys.join(',')}) VALUES (${placeholders}) RETURNING *`;
     const rows = await AppDataSource.query(sql, values);
     res.status(201).json(rows[0]);
   } catch (err) {
+    console.error(`Error creating record in ${table}:`, err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -244,11 +258,25 @@ testRouter.put('/:table/:id', async (req, res) => {
     const keys = Object.keys(body);
     if (keys.length === 0) return res.status(400).json({ message: 'Body is empty' });
     
+    // Get table schema for validation
+    const tableSchema = dbSchema.tables[table];
+    if (!tableSchema) {
+      return res.status(400).json({ message: `Table '${table}' not found in schema` });
+    }
+    
+    // Validate that all keys exist in the table schema
+    const invalidKeys = keys.filter(key => !tableSchema.columns.includes(key));
+    if (invalidKeys.length > 0) {
+      return res.status(400).json({ 
+        message: `Invalid columns: ${invalidKeys.join(', ')}. Valid columns: ${tableSchema.columns.join(', ')}` 
+      });
+    }
+    
     const setClause = keys.map((key, i) => `${key} = $${i + 1}`).join(',');
     const values = Object.values(body);
     values.push(id);
     
-    // Get primary key for the table (simplified mapping)
+    // Get primary key for the table
     const primaryKey = primaryKeyFor(table);
     const sql = `UPDATE ${table} SET ${setClause} WHERE ${primaryKey} = $${keys.length + 1} RETURNING *`;
     const rows = await AppDataSource.query(sql, values);
@@ -256,6 +284,7 @@ testRouter.put('/:table/:id', async (req, res) => {
     if (rows.length === 0) return res.status(404).json({ message: 'Record not found' });
     res.json(rows[0]);
   } catch (err) {
+    console.error(`Error updating record in ${table}:`, err);
     res.status(500).json({ error: err.message });
   }
 });

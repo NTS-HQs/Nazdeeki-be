@@ -10,13 +10,30 @@ let cachedSchema = null;
 function loadSchema() {
   if (cachedSchema) return cachedSchema;
 
-  // Resolve path to str.csv two directories up from this file (project root)
-  const csvPath = path.resolve(__dirname, '..', '..', '..', 'str.csv');
-  if (!fs.existsSync(csvPath)) {
-    console.warn(`⚠️  [SCHEMA-LOADER] str.csv not found at ${csvPath}. Falling back to empty schema.`);
+  // Try multiple possible paths for str.csv
+  const possiblePaths = [
+    path.resolve(__dirname, '..', '..', '..', 'str.csv'), // From utils directory
+    path.resolve(__dirname, '..', '..', 'str.csv'), // From src directory
+    path.resolve(process.cwd(), 'str.csv'), // From project root
+    path.resolve(process.cwd(), 'nazdeeki', 'str.csv'), // From workspace root
+  ];
+
+  let csvPath = null;
+  for (const testPath of possiblePaths) {
+    if (fs.existsSync(testPath)) {
+      csvPath = testPath;
+      break;
+    }
+  }
+
+  if (!csvPath) {
+    console.warn(`⚠️  [SCHEMA-LOADER] str.csv not found. Tried paths:`, possiblePaths);
+    console.warn(`⚠️  [SCHEMA-LOADER] Falling back to empty schema.`);
     cachedSchema = { tables: {}, referencesMap: {} };
     return cachedSchema;
   }
+
+  console.log(`✅ [SCHEMA-LOADER] Found str.csv at: ${csvPath}`);
 
   const csvContent = fs.readFileSync(csvPath, 'utf8');
   const lines = csvContent.split(/\r?\n/).filter(Boolean);
