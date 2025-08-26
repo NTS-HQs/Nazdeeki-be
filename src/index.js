@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const { DataSource } = require('typeorm');
 const { registerTableRoutes } = require('./routes/routes');
 const authRoutes = require('./routes/authRoutes');
+const userAuthRoutes = require('./routes/userAuthRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 
 const authMiddleware = require('./middlewares/authMiddleware');
@@ -58,12 +59,31 @@ console.log('📋 [EXPRESS-MIDDLEWARE] Setting up middleware...');
 app.use(express.json());
 console.log('✅ [EXPRESS-MIDDLEWARE] JSON parser configured');
 
-const corsOrigin = process.env.FRONTEND_URL || 'http://localhost:5173';
+// Configure CORS for multiple frontend apps
+const allowedOrigins = [
+  process.env.USER_FRONTEND_URL || 'http://localhost:5173',   // User App
+  process.env.SELLER_FRONTEND_URL || 'http://localhost:5174', // Seller App
+  process.env.FRONTEND_URL || 'http://localhost:5173'         // Legacy support
+];
+
 app.use(cors({
-  origin: corsOrigin,
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) return callback(null, true);
+    
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    console.log(`🚫 [CORS] Blocked origin: ${origin}`);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
-console.log(`✅ [EXPRESS-MIDDLEWARE] CORS configured for origin: ${corsOrigin}`);
+
+console.log(`✅ [EXPRESS-MIDDLEWARE] CORS configured for origins:`, allowedOrigins);
 
 app.use(morgan('dev'));
 console.log('✅ [EXPRESS-MIDDLEWARE] Morgan logging configured');
@@ -157,7 +177,11 @@ AppDataSource.initialize()
     
     // Mount auth routes first (no auth required)
     app.use('/auth', authRoutes);
-    console.log('✅ [ROUTES] Auth routes mounted at /auth');
+    console.log('✅ [ROUTES] Seller auth routes mounted at /auth');
+    
+    // Mount user auth routes
+    app.use('/auth/user', userAuthRoutes);
+    console.log('✅ [ROUTES] User auth routes mounted at /auth/user');
     
     // Mount upload routes (with auth built-in)
     app.use('/upload', uploadRoutes);
