@@ -8,6 +8,7 @@ const { registerTableRoutes } = require('./routes/routes');
 const authRoutes = require('./routes/authRoutes');
 const userAuthRoutes = require('./routes/userAuthRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
+const offersRoutes = require('./routes/offersRoutes');
 
 const authMiddleware = require('./middlewares/authMiddleware');
 const dbHealthCheck = require('./middlewares/dbHealthCheck');
@@ -186,6 +187,10 @@ AppDataSource.initialize()
     // Mount upload routes (with auth built-in)
     app.use('/upload', uploadRoutes);
     console.log('✅ [ROUTES] Upload routes mounted at /upload');
+    
+    // Mount offers routes (with auth built-in)
+    app.use('/offers', offersRoutes);
+    console.log('✅ [ROUTES] Offers routes mounted at /offers');
     
     // Apply auth & DB health check to all API routes
     app.use('/api', authMiddleware, dbHealthCheck);
