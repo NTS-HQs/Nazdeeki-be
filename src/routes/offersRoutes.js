@@ -136,6 +136,48 @@ router.get('/active', verifyToken, async (req, res) => {
   }
 });
 
+// -----------------------------------------------------------------------------
+// PUBLIC ENDPOINT (No Auth) - Get active offers across ALL sellers (for User app)
+// -----------------------------------------------------------------------------
+router.get('/public/active', async (_req, res) => {
+  try {
+    const AppDataSource = getDataSource();
+    const offers = await AppDataSource.query(`
+      SELECT 
+        offer_id,
+        seller_id,
+        offer_title,
+        offer_description,
+        offer_image,
+        discount_type,
+        discount_value,
+        min_order_amount,
+        max_discount_amount,
+        valid_from,
+        valid_until,
+        usage_limit,
+        used_count,
+        created_at
+      FROM offers 
+      WHERE is_active = TRUE 
+        AND (valid_until IS NULL OR valid_until > NOW())
+        AND (usage_limit IS NULL OR used_count < usage_limit)
+      ORDER BY created_at DESC
+    `);
+
+    console.log(`✅ Retrieved ${offers.length} public active offers`);
+
+    res.json({
+      success: true,
+      offers,
+      count: offers.length,
+    });
+  } catch (error) {
+    console.error('🚨 Get public active offers error:', error);
+    res.status(500).json({ error: 'Failed to retrieve offers' });
+  }
+});
+
 // POST /offers - Create new offer
 router.post('/', verifyToken, async (req, res) => {
   try {
